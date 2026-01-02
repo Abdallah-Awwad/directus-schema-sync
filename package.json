@@ -1,0 +1,16 @@
+{
+    "name": "directus-schema-sync",
+    "version": "1.0.0",
+    "description": "Scripts to sync Directus schema between environments",
+    "scripts": {
+        "sync": "node ./src/sync-schema.js",
+        "apply": "node ./src/apply-schema.js"
+    },
+    "keywords": [
+        "directus",
+        "schema",
+        "sync"
+    ],
+    "author": "",
+    "license": "MIT"
+}
