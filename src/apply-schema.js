@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 // --- Load Env --- //
 const envPath = path.join(__dirname, '../.env');
@@ -47,7 +48,12 @@ async function apply() {
         console.log("Destination schema now matches source!");
 
     } catch (error) {
-        console.error("Apply failed:", error.message);
+        if (error.message.includes("request entity too large")) {
+            console.error("\n❌ Apply failed: The schema diff is too large for the destination server.");
+            console.error("👉 Solution: Increase 'MAX_PAYLOAD_SIZE' to 10mb or more in your destination Directus environment variables.");
+        } else {
+            console.error("Apply failed:", error.message);
+        }
         process.exit(1);
     }
 }
@@ -56,14 +62,24 @@ async function fetchJson(url, token, method = 'GET', body = null) {
     const headers = {
         'Authorization': `Bearer ${token}`
     };
-    if (body) {
+
+    let finalBody = body ? JSON.stringify(body) : undefined;
+
+    if (finalBody) {
         headers['Content-Type'] = 'application/json';
+
+        // Compress if the body is larger than 1KB
+        if (finalBody.length > 1024) {
+            const compressed = zlib.gzipSync(finalBody);
+            finalBody = compressed;
+            headers['Content-Encoding'] = 'gzip';
+        }
     }
 
     const response = await fetch(url, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined
+        body: finalBody
     });
 
     if (!response.ok) {

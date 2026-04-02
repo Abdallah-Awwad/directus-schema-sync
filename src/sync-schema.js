@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 // --- Load Env --- //
 const envPath = path.join(__dirname, '../.env');
@@ -50,6 +51,15 @@ async function sync() {
         // Directus snapshot might be wrapped in { data: ... } or return the object directly
         const snapshotBody = sourceSnapshot.data || sourceSnapshot;
 
+        const payload = JSON.stringify(snapshotBody);
+        const payloadSizeMb = (payload.length / (1024 * 1024)).toFixed(2);
+
+        console.log(`Sending snapshot to destination for comparison (${payloadSizeMb} MB)...`);
+
+        if (payload.length > 1024 * 1024) {
+            console.warn(`⚠️ Warning: Snapshot size is ${payloadSizeMb}MB. If this fails, increase MAX_PAYLOAD_SIZE on the destination server.`);
+        }
+
         const diffResponse = await fetchJson(
             `${config.destUrl}/schema/diff`,
             config.destToken,
@@ -65,7 +75,12 @@ async function sync() {
         console.log(`Diff saved to ${config.diffFile} (data wrapper processed)`);
 
     } catch (error) {
-        console.error("Sync failed:", error.message);
+        if (error.message.includes("request entity too large")) {
+            console.error("\n❌ Sync failed: The schema snapshot is too large for the destination server.");
+            console.error("👉 Solution: Increase 'MAX_PAYLOAD_SIZE' to 10mb or more in your destination Directus environment variables.");
+        } else {
+            console.error("Sync failed:", error.message);
+        }
         process.exit(1);
     }
 }
@@ -74,14 +89,24 @@ async function fetchJson(url, token, method = 'GET', body = null) {
     const headers = {
         'Authorization': `Bearer ${token}`
     };
-    if (body) {
+
+    let finalBody = body ? JSON.stringify(body) : undefined;
+
+    if (finalBody) {
         headers['Content-Type'] = 'application/json';
+
+        // Compress if the body is larger than 1KB
+        if (finalBody.length > 1024) {
+            const compressed = zlib.gzipSync(finalBody);
+            finalBody = compressed;
+            headers['Content-Encoding'] = 'gzip';
+        }
     }
 
     const response = await fetch(url, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined
+        body: finalBody
     });
 
     if (!response.ok) {
